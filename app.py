@@ -3,6 +3,7 @@ import yt_dlp
 import os
 import tempfile
 import requests
+import time
 
 # 設定網頁標題與圖示
 st.set_page_config(page_title="波貓下載器", page_icon="🐾")
@@ -26,6 +27,38 @@ mode = st.radio("2. 選擇下載格式：", ["影片 (MP4)", "音訊 (MP3)"])
 url = st.text_input("3. 請貼上連結：", placeholder="https://...")
 
 is_playlist_mode = "播放清單" in selected_platform
+
+# 取得 Cobalt API 下載連結
+def get_cobalt_download_url(target_url, mode_type):
+    cobalt_urls = [
+        "https://api.cobalt.tools/",
+        "https://co.wuk.sh/api/json"
+    ]
+    
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    }
+    
+    payload = {
+        "url": target_url,
+        "downloadMode": "audio" if "音訊" in mode_type else "auto",
+        "audioFormat": "mp3"
+    }
+
+    for api in cobalt_urls:
+        try:
+            res = requests.post(api, json=payload, headers=headers, timeout=8)
+            if res.status_code == 200:
+                data = res.json()
+                if data.get("url"):
+                    return data.get("url")
+                elif data.get("status") in ["stream", "redirect"]:
+                    return data.get("url")
+        except Exception:
+            continue
+    return None
 
 # --- 模式 A：播放清單模式 ---
 if is_playlist_mode:
@@ -82,7 +115,7 @@ if is_playlist_mode:
                             if is_checked:
                                 selected_items.append({"title": item_title, "url": item_url})
                                 
-                        submit_btn = st.form_submit_button("📦 開始處理勾選的項目")
+                        submit_btn = st.form_submit_button("📦 開始取得所選項目的下載連結")
                         
                     if submit_btn:
                         if selected_items:
@@ -94,31 +127,31 @@ if is_playlist_mode:
         except Exception as e:
             st.error(f"❌ 播放清單解析失敗：{e}")
 
-    # 處理勾選項目的實體檔案下載
+    # 處理勾選項目的下載連結生成
     if 'items_to_download' in st.session_state:
         selected_items = st.session_state['items_to_download']
-        st.success(f"🎉 已選擇 {len(selected_items)} 個項目！請點擊下方按鈕進行下載：")
+        st.success(f"🎉 正在為選取的 {len(selected_items)} 個項目獲取直連檔案：")
+        
+        progress_bar = st.progress(0)
         
         for idx, item in enumerate(selected_items, start=1):
             st.write(f"**#{idx} {item['title']}**")
             
-            # 使用 Cobalt 代理取得真正可下載的串流檔案連結
-            try:
-                res = requests.post(
-                    "https://api.cobalt.tools/",
-                    json={"url": item['url'], "downloadMode": "audio" if "音訊" in mode else "auto"},
-                    headers={"Accept": "application/json", "Content-Type": "application/json"},
-                    timeout=10
-                )
-                data = res.json()
-                dl_url = data.get("url")
-                if dl_url:
-                    st.link_button(f"💾 下載檔案 (#{idx})", dl_url)
-                else:
-                    st.error(f"❌ 無法取得 #{idx} 的下載連結")
-            except Exception:
-                st.error(f"❌ 處理 #{idx} 時連線超時")
+            # 呼叫多重備援 API 取得直接下載檔
+            dl_file_url = get_cobalt_download_url(item['url'], mode)
+            
+            if dl_file_url:
+                st.link_button(f"💾 點我下載 #{idx} ({'MP3' if '音訊' in mode else 'MP4'})", dl_file_url)
+            else:
+                # 備援第三方快捷下載管道
+                cobalt_web = f"https://cobalt.tools/#url={item['url']}"
+                st.link_button(f"🔗 前往通道下載 #{idx}", cobalt_web)
+                st.caption("（若無直連按鈕，請點上方按鈕一鍵前往下載）")
+
             st.write("---")
+            # 加上防擋緩衝時間 (0.5 秒)
+            time.sleep(0.5)
+            progress_bar.progress(idx / len(selected_items))
 
 # --- 模式 B：單一媒體模式 (無播放清單) ---
 else:
@@ -127,24 +160,11 @@ else:
             st.info("⌛ 正在解析並抓取媒體檔案，請稍候...")
             target_url = url.strip()
             
-            try:
-                res = requests.post(
-                    "https://api.cobalt.tools/",
-                    json={"url": target_url, "downloadMode": "audio" if "音訊" in mode else "auto"},
-                    headers={"Accept": "application/json", "Content-Type": "application/json"},
-                    timeout=12
-                )
-                data = res.json()
-                if data.get("status") in ["stream", "redirect"]:
-                    st.success("✅ 解析成功！請點擊下方按鈕下載：")
-                    st.link_button("💾 點我開啟/下載媒體檔案", data.get("url"))
-                elif data.get("status") == "picker":
-                    st.success("✅ 找到多個媒體檔案：")
-                    for idx, item in enumerate(data.get("picker", []), start=1):
-                        st.link_button(f"💾 下載項目 {idx}", item.get("url"))
-                else:
-                    raise Exception("Cobalt 解析無效")
-            except Exception:
+            dl_file_url = get_cobalt_download_url(target_url, mode)
+            if dl_file_url:
+                st.success("✅ 解析成功！請點擊下方按鈕下載：")
+                st.link_button("💾 點我開啟/下載媒體檔案", dl_file_url)
+            else:
                 try:
                     with tempfile.TemporaryDirectory() as temp_dir:
                         save_path = os.path.join(temp_dir, "%(title)s.%(ext)s")
