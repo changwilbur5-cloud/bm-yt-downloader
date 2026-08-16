@@ -1,6 +1,5 @@
 import streamlit as st
 import yt_dlp
-import re
 
 # 設定網頁標題與圖示
 st.set_page_config(page_title="波貓下載器", page_icon="🐾")
@@ -25,23 +24,6 @@ url = st.text_input("3. 請貼上連結：", placeholder="https://...")
 
 is_playlist_mode = "播放清單" in selected_platform
 
-# 強效影片 ID 提取器
-def extract_video_id(item_data):
-    # 1. 優先從 entry 字典直接找 id
-    if isinstance(item_data, dict):
-        if item_data.get('id'):
-            return item_data.get('id')
-        if item_data.get('url'):
-            item_data = item_data.get('url')
-            
-    # 2. 從網址字串提取 11 位數 ID
-    if isinstance(item_data, str):
-        match = re.search(r"(?:v=|\/|be\/)([0-9A-Za-z_-]{11})", item_data)
-        if match:
-            return match.group(1)
-            
-    return None
-
 # --- 模式 A：播放清單模式 ---
 if is_playlist_mode:
     if st.button("🔍 解析播放清單"):
@@ -58,7 +40,8 @@ if is_playlist_mode:
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
-            'extract_flat': True,
+            'extract_flat': 'in_playlist',
+            'skip_download': True,
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
@@ -82,8 +65,16 @@ if is_playlist_mode:
                         
                         for idx, entry in enumerate(entries, start=1):
                             item_title = entry.get('title', f'項目 {idx}')
-                            vid = extract_video_id(entry)
                             
+                            # 全面提取獨立影片網址
+                            item_id = entry.get('id') or entry.get('url')
+                            if item_id and not item_id.startswith("http"):
+                                item_url = f"https://www.youtube.com/watch?v={item_id}"
+                            elif item_id and item_id.startswith("http"):
+                                item_url = item_id
+                            else:
+                                item_url = target_url
+
                             default_val = True
                             if select_all:
                                 default_val = True
@@ -92,7 +83,7 @@ if is_playlist_mode:
                                 
                             is_checked = st.checkbox(f"{idx}. {item_title}", value=default_val, key=f"item_{idx}")
                             if is_checked:
-                                selected_items.append({"title": item_title, "id": vid, "raw": entry})
+                                selected_items.append({"title": item_title, "url": item_url})
                                 
                         submit_btn = st.form_submit_button("📦 確認勾選並準備下載通道")
                         
@@ -115,22 +106,15 @@ if is_playlist_mode:
         for idx, item in enumerate(selected_items, start=1):
             st.write(f"**#{idx} {item['title']}**")
             
-            vid = item.get('id') or extract_video_id(item.get('raw'))
+            clean_url = item['url']
+            dl_channel_1 = f"https://cobalt.tools/#url={clean_url}"
+            dl_channel_2 = f"https://www.y2mate.com/zh-tw"
             
-            if vid:
-                clean_yt_url = f"https://www.youtube.com/watch?v={vid}"
-                
-                # 免 API 直接帶入網址的極速下載通道
-                dl_channel_1 = f"https://cobalt.tools/#url={clean_yt_url}"
-                dl_channel_2 = f"https://www.y2mate.com/youtube/{vid}"
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.link_button(f"⚡ 高速通道 #{idx}", dl_channel_1, type="primary")
-                with col2:
-                    st.link_button(f"🛡️ 備援通道 #{idx}", dl_channel_2)
-            else:
-                st.error(f"❌ #{idx} 項目無法解析 ID")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.link_button(f"⚡ 高速下載通道 #{idx}", dl_channel_1, type="primary")
+            with col2:
+                st.link_button(f"🛡️ 備援通道 #{idx}", dl_channel_2)
             st.write("---")
 
 # --- 模式 B：單一媒體模式 ---
@@ -139,20 +123,15 @@ else:
         if url:
             st.info("⌛ 正在建立專屬下載通道，請稍候...")
             target_url = url.strip()
-            vid = extract_video_id(target_url)
             
-            if vid:
-                clean_yt_url = f"https://www.youtube.com/watch?v={vid}"
-                dl_channel_1 = f"https://cobalt.tools/#url={clean_yt_url}"
-                dl_channel_2 = f"https://www.y2mate.com/youtube/{vid}"
-                
-                st.success("✅ 解析成功！請選擇適合的通道進行下載：")
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.link_button("⚡ 高速下載通道", dl_channel_1, type="primary")
-                with col2:
-                    st.link_button("🛡️ 備援下載通道", dl_channel_2)
-            else:
-                st.link_button("⚡ 點我前往免追蹤線上下載", f"https://cobalt.tools/#url={target_url}", type="primary")
+            dl_channel_1 = f"https://cobalt.tools/#url={target_url}"
+            dl_channel_2 = f"https://www.y2mate.com/zh-tw"
+            
+            st.success("✅ 解析成功！請選擇適合的通道進行下載：")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.link_button("⚡ 高速下載通道", dl_channel_1, type="primary")
+            with col2:
+                st.link_button("🛡️ 備援下載通道", dl_channel_2)
         else:
             st.warning("⚠️ 請先貼上有效的網址！")
