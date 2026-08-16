@@ -2,6 +2,18 @@ import streamlit as st
 import yt_dlp
 import os
 import tempfile
+import sys
+import subprocess
+
+# 嘗試自動升級 yt-dlp 以取得最新的防封鎖破解腳本
+@st.cache_resource
+def update_ytdlp():
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"])
+    except Exception as e:
+        pass
+
+update_ytdlp()
 
 # 設定網頁標題與圖示
 st.set_page_config(page_title="波貓下載器", page_icon="🐾")
@@ -32,36 +44,39 @@ if st.button("🚀 開始下載"):
         with tempfile.TemporaryDirectory() as temp_dir:
             save_path = os.path.join(temp_dir, "%(title)s.%(ext)s")
             
-            # 通用的防封鎖與偽裝 Header
+            # 擬真瀏覽器請求標頭
             headers = {
-                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
                 'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
                 'Sec-Fetch-Mode': 'navigate',
             }
 
-            # 針對小紅書加入專用 Referer 偽裝
-            if "Xiaohongshu" in selected_platform or "xhslink" in url or "xiaohongshu" in url:
+            # 針對小紅書補充 Referer
+            if "Xiaohongshu" in selected_platform or "xhs" in url or "xiaohongshu" in url:
                 headers['Referer'] = 'https://www.xiaohongshu.com/'
 
-            # 依格式設定 yt-dlp 參數
+            # 通用 yt-dlp 設定檔
+            ydl_opts = {
+                'outtmpl': save_path,
+                'noplaylist': True,
+                'quiet': True,
+                'http_headers': headers,
+                'no_check_certificate': True,
+                # 關鍵防 403 參數：更換 YouTube API 客戶端模擬類型
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['web_embedded', 'android', 'ios'],
+                        'player_js_version': ['actual']
+                    }
+                }
+            }
+
             if "音訊" in mode:
-                ydl_opts = {
-                    'format': 'bestaudio/best',
-                    'outtmpl': save_path,
-                    'noplaylist': True,
-                    'quiet': True,
-                    'http_headers': headers,
-                }
+                ydl_opts['format'] = 'bestaudio/best'
             else:
-                ydl_opts = {
-                    'format': 'best',
-                    'outtmpl': save_path,
-                    'noplaylist': True,
-                    'quiet': True,
-                    'http_headers': headers,
-                }
-            
+                ydl_opts['format'] = 'best'
+
             try:
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(url, download=True)
@@ -78,6 +93,6 @@ if st.button("🚀 開始下載"):
                         mime="audio/mpeg" if "音訊" in mode else "video/mp4"
                     )
             except Exception as e:
-                st.error(f"❌ 下載失敗，請檢查網址或平台限制。\n錯誤訊息：{e}")
+                st.error(f"❌ 下載失敗！平台可能有嚴格反爬蟲限制。\n錯誤細節：{e}")
     else:
         st.warning("⚠️ 請先貼上有效的網址！")
