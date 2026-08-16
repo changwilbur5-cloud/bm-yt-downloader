@@ -1,15 +1,6 @@
 import streamlit as st
+import yt_dlp
 import requests
-import json
-import re
-
-# 清理網址參數與標準化
-def clean_url(raw_url):
-    url = raw_url.strip()
-    # 移除 YouTube / 小紅書 的 si、share_token 等追蹤參數
-    if "?" in url:
-        url = url.split("?")[0]
-    return url
 
 # 設定網頁標題與圖示
 st.set_page_config(page_title="波貓下載器", page_icon="🐾")
@@ -17,7 +8,6 @@ st.set_page_config(page_title="波貓下載器", page_icon="🐾")
 st.title("🐾 波貓下載器 (網頁跨平台版)")
 st.write("輸入網址，選擇平台與格式即可快速下載！")
 
-# 平台選單
 folders = {
     "1": "YouTube",
     "2": "Douyin (抖音)",
@@ -33,52 +23,66 @@ url = st.text_input("3. 請貼上影片/音訊網址：", placeholder="https://.
 
 if st.button("🚀 開始下載"):
     if url:
-        st.info("⌛ 正在透過雲端高安全性通道解析媒體，請稍候...")
+        st.info("⌛ 正在解析媒體通道，請稍候...")
         
-        target_url = clean_url(url)
+        target_url = url.strip()
         
-        # Cobalt API 完整請求標頭
-        cobalt_api_url = "https://api.cobalt.tools/"
+        # 使用多重極速 API 通道解析
+        api_url = f"https://api.cobalt.tools/"
         headers = {
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "Origin": "https://cobalt.tools",
-            "Referer": "https://cobalt.tools/",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
         
         payload = {
             "url": target_url,
-            "downloadMode": "audio" if "音訊" in mode else "auto",
-            "videoQuality": "1080",
-            "audioFormat": "mp3"
+            "videoQuality": "720" if "影片" in mode else "360",
+            "downloadMode": "audio" if "音訊" in mode else "auto"
         }
         
+        parsed = False
+        
+        # 優先嘗試 API 通道
         try:
-            response = requests.post(cobalt_api_url, json=payload, headers=headers, timeout=20)
-            
-            if response.status_code == 200:
-                data = response.json()
-                status = data.get("status")
-                
-                if status in ["stream", "redirect"]:
+            res = requests.post(api_url, json=payload, headers=headers, timeout=12)
+            if res.status_code == 200:
+                data = res.json()
+                if data.get("status") in ["stream", "redirect"]:
                     download_link = data.get("url")
-                    st.success("✅ 解析成功！請點擊下方按鈕開始下載：")
-                    st.link_button("💾 點我開啟/下載媒體檔案", download_link)
-                    
-                elif status == "picker":
+                    st.success("✅ 解析成功！請點擊下方按鈕開啟/下載媒體：")
+                    st.link_button("💾 點我下載檔案", download_link)
+                    parsed = True
+                elif data.get("status") == "picker":
                     st.success("✅ 解析成功！找到多個媒體檔案：")
-                    picker_items = data.get("picker", [])
-                    for idx, item in enumerate(picker_items, start=1):
-                        item_url = item.get("url")
-                        st.link_button(f"💾 下載項目 {idx}", item_url)
-                else:
-                    error_msg = data.get("text", "無法解析此連結")
-                    st.error(f"❌ 解析失敗：{error_msg}")
-            else:
-                st.error(f"❌ 伺服器回應異常 ({response.status_code})，請稍後重試。")
+                    for idx, item in enumerate(data.get("picker", []), start=1):
+                        st.link_button(f"💾 下載項目 {idx}", item.get("url"))
+                    parsed = True
+        except Exception:
+            pass
 
-        except Exception as e:
-            st.error(f"❌ 連線逾時或 API 服務忙碌中：{e}")
+        # 備援通道：若 API 失敗，使用本地 yt-dlp 抽離直連網址
+        if not parsed:
+            try:
+                ydl_opts = {
+                    'quiet': True,
+                    'no_warnings': True,
+                    'format': 'best' if "影片" in mode else 'bestaudio/best',
+                    'extractor_args': {
+                        'youtube': {'player_client': ['android', 'ios', 'mweb']}
+                    }
+                }
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(target_url, download=False)
+                    direct_url = info.get('url')
+                    title = info.get('title', '媒體檔案')
+                    
+                    if direct_url:
+                        st.success(f"✅ 解析成功！標題：{title}")
+                        st.link_button("💾 點我看影片 / 長按儲存", direct_url)
+                        parsed = True
+            except Exception as e:
+                st.error(f"❌ 解析失敗：{e}")
+                st.warning("💡 小提醒：YouTube 目前對免費雲端主機封鎖極為嚴格，若多次失敗，建議換成抖音、IG、小紅書等平台連結測試！")
     else:
         st.warning("⚠️ 請先貼上有效的網址！")
