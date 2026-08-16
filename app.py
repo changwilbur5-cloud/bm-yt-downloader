@@ -1,12 +1,11 @@
 import streamlit as st
 import yt_dlp
-import requests
-import json
+import re
 
 # 設定網頁標題與圖示
 st.set_page_config(page_title="波貓下載器", page_icon="🐾")
 
-st.title("🐾 波貓下載器 (防封鎖穩定版)")
+st.title("🐾 波貓下載器 (終極穩定版)")
 st.write("選擇對應平台與格式，貼上網址即可快速解析下載！")
 
 # 分類平台選項
@@ -26,45 +25,10 @@ url = st.text_input("3. 請貼上連結：", placeholder="https://...")
 
 is_playlist_mode = "播放清單" in selected_platform
 
-# 透過 Piped/Invidious 備援鏡像通道解析直連下載檔 (防 403 封鎖)
-def get_bypass_download_link(video_url, is_audio_mode):
-    # 提取 Video ID
-    video_id = None
-    if "v=" in video_url:
-        video_id = video_url.split("v=")[1].split("&")[0]
-    elif "youtu.be/" in video_url:
-        video_id = video_url.split("youtu.be/")[1].split("?")[0]
-    
-    if not video_id:
-        return None
-
-    # 使用 Piped 免費鏡像 API 取得直連網址
-    piped_instances = [
-        "https://pipedapi.kavin.rocks",
-        "https://api.piped.privacydev.net",
-        "https://pipedapi.tokhmi.xyz"
-    ]
-    
-    for api_base in piped_instances:
-        try:
-            res = requests.get(f"{api_base}/streams/{video_id}", timeout=6)
-            if res.status_code == 200:
-                data = res.json()
-                if is_audio_mode:
-                    # 取得音訊串流
-                    audio_streams = data.get("audioStreams", [])
-                    if audio_streams:
-                        return audio_streams[0].get("url")
-                else:
-                    # 取得含聲音影片串流
-                    video_streams = data.get("videoStreams", [])
-                    for stream in video_streams:
-                        if stream.get("videoOnly") == False:
-                            return stream.get("url")
-                    if video_streams:
-                        return video_streams[0].get("url")
-        except Exception:
-            continue
+def extract_video_id(v_url):
+    match = re.search(r"(?:v=|\/([0-9A-Za-z_-]{11}))", v_url)
+    if match:
+        return match.group(1) or match.group(0).replace("v=", "")
     return None
 
 # --- 模式 A：播放清單模式 ---
@@ -118,9 +82,9 @@ if is_playlist_mode:
                                 
                             is_checked = st.checkbox(f"{idx}. {item_title}", value=default_val, key=f"item_{idx}")
                             if is_checked:
-                                selected_items.append({"title": item_title, "url": item_url})
+                                selected_items.append({"title": item_title, "url": item_url, "id": item_id})
                                 
-                        submit_btn = st.form_submit_button("📦 確認勾選並取得下載網址")
+                        submit_btn = st.form_submit_button("📦 確認勾選並準備下載通道")
                         
                     if submit_btn:
                         if selected_items:
@@ -132,38 +96,52 @@ if is_playlist_mode:
         except Exception as e:
             st.error(f"❌ 解析失敗：{e}")
 
-    # 顯示直連下載按鈕 (避開 403)
+    # 顯示穩定雙軌下載按鈕
     if 'items_to_download' in st.session_state:
         selected_items = st.session_state['items_to_download']
         st.write("---")
-        st.subheader("📥 點擊下方按鈕即可快速儲存檔案：")
+        st.subheader("📥 點擊下方按鈕即可開始儲存：")
         
         is_audio = "音訊" in mode
         for idx, item in enumerate(selected_items, start=1):
             st.write(f"**#{idx} {item['title']}**")
             
-            dl_link = get_bypass_download_link(item['url'], is_audio)
+            vid = item.get('id') or extract_video_id(item['url'])
             
-            if dl_link:
-                st.link_button(f"💾 點我下載 #{idx} ({'MP3' if is_audio else 'MP4'})", dl_link)
+            if vid:
+                # 雙軌下載方案：1. Cobalt 免費高速通道 2. Invidious 備援串流通道
+                cobalt_url = f"https://cobalt.tools/#url=https://www.youtube.com/watch?v={vid}"
+                invidious_url = f"https://yewtu.be/watch?v={vid}"
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.link_button(f"⚡ 高速下載通道 #{idx}", cobalt_url, type="primary")
+                with col2:
+                    st.link_button(f"🛡️ 備援播放/下載 #{idx}", invidious_url)
             else:
-                st.error(f"❌ #{idx} 媒體通道目前忙碌中，請稍後重試。")
+                st.error("❌ 無法提取該影片的 ID")
             st.write("---")
 
 # --- 模式 B：單一媒體模式 ---
 else:
     if st.button("🚀 開始下載"):
         if url:
-            st.info("⌛ 正在穿透防護通道，請稍候...")
+            st.info("⌛ 正在建立專屬下載通道，請稍候...")
             target_url = url.strip()
-            is_audio = "音訊" in mode
+            vid = extract_video_id(target_url)
             
-            dl_link = get_bypass_download_link(target_url, is_audio)
-            
-            if dl_link:
-                st.success("✅ 解析成功！請點擊下方按鈕開始下載：")
-                st.link_button(f"💾 點我開啟/下載 ({'MP3' if is_audio else 'MP4'})", dl_link)
+            if vid:
+                cobalt_url = f"https://cobalt.tools/#url=https://www.youtube.com/watch?v={vid}"
+                invidious_url = f"https://yewtu.be/watch?v={vid}"
+                
+                st.success("✅ 解析成功！請選擇適合的通道進行下載：")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.link_button("⚡ 高速下載通道", cobalt_url, type="primary")
+                with col2:
+                    st.link_button("🛡️ 備援播放/下載通道", invidious_url)
             else:
-                st.error("❌ 無法取得媒體串流，可能是 YouTube 防爬蟲限制或網址不正確。")
+                # 非 YouTube 的其他平台嘗試直接轉向
+                st.link_button("⚡ 點我前往免追蹤線上下載", f"https://cobalt.tools/#url={target_url}", type="primary")
         else:
             st.warning("⚠️ 請先貼上有效的網址！")
