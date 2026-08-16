@@ -6,7 +6,7 @@ import sys
 import subprocess
 import requests
 
-# 確保 yt-dlp 保持最新版
+# 自動更新 yt-dlp
 @st.cache_resource
 def install_latest_ytdlp():
     try:
@@ -14,12 +14,12 @@ def install_latest_ytdlp():
             sys.executable, "-m", "pip", "install", "--upgrade", 
             "https://github.com/yt-dlp/yt-dlp/archive/master.zip"
         ])
-    except Exception as e:
+    except Exception:
         pass
 
 install_latest_ytdlp()
 
-# 還原短網址
+# 還原短網址 (小紅書 / YouTube 短網址)
 def resolve_url(url):
     if "xhslink" in url or "youtu.be" in url:
         try:
@@ -66,13 +66,12 @@ if st.button("🚀 開始下載"):
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
             }
 
             if "Xiaohongshu" in selected_platform or "xiaohongshu" in target_url:
                 headers['Referer'] = 'https://www.xiaohongshu.com/'
 
-            # 針對 YouTube 避開 403 的特別設定檔
+            # 防 403 終極參數：引入 Invidious 公用代理節點 + 停用 Dash
             ydl_opts = {
                 'outtmpl': save_path,
                 'noplaylist': True,
@@ -80,21 +79,19 @@ if st.button("🚀 開始下載"):
                 'http_headers': headers,
                 'no_check_certificate': True,
                 'nocheckcertificate': True,
-                'geo_bypass': True,
-                # 使用 iOS / Android client 避開 Cloud 封鎖
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['ios', 'android', 'mweb'],
-                        'skip': ['hls', 'dash']
+                        'invidious_instance': ['https://invidious.nerdvpn.de', 'https://inv.us.projectsegfau.lt', 'https://invidious.flokinet.to'],
+                        'player_client': ['android', 'ios', 'mweb'],
+                        'skip': ['dash', 'hls']
                     }
                 }
             }
 
             if "音訊" in mode:
-                ydl_opts['format'] = 'ba/ba*'
+                ydl_opts['format'] = 'ba/bestaudio/best'
             else:
-                # 只抓取整合好的單一 mp4 檔案，防止 SABR 串流阻擋
-                ydl_opts['format'] = 'b[ext=mp4]/b/best'
+                ydl_opts['format'] = 'b[ext=mp4]/best[ext=mp4]/best'
 
             try:
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -112,6 +109,6 @@ if st.button("🚀 開始下載"):
                     )
             except Exception as e:
                 st.error(f"❌ 下載失敗！\n錯誤細節：{e}")
-                st.warning("💡 **說明**：免費雲端伺服器 (Streamlit) 的 IP 近期被 YouTube 嚴格封鎖。如果依然顯示 403，建議更換為非 YouTube 平台的連結（如 Instagram、抖音），或是稍後再試！")
+                st.warning("💡 **小提醒**：如果 YouTube 依然被阻擋，代表各公用機房正遭受嚴格限制，建議優先測試 抖音、Instagram 或 Podcast 等其他平台！")
     else:
         st.warning("⚠️ 請先貼上有效的網址！")
