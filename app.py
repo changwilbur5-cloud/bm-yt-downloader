@@ -25,7 +25,6 @@ mode = st.radio("2. 選擇下載格式：", ["影片 (MP4)", "音訊 (MP3)"])
 
 url = st.text_input("3. 請貼上連結：", placeholder="https://...")
 
-# 判斷是否為播放清單模式
 is_playlist_mode = "播放清單" in selected_platform
 
 # --- 模式 A：播放清單模式 ---
@@ -83,19 +82,43 @@ if is_playlist_mode:
                             if is_checked:
                                 selected_items.append({"title": item_title, "url": item_url})
                                 
-                        submit_btn = st.form_submit_button("📦 產生所選項目的下載連結")
+                        submit_btn = st.form_submit_button("📦 開始處理勾選的項目")
                         
                     if submit_btn:
                         if selected_items:
-                            st.success(f"🎉 已選擇 {len(selected_items)} 個項目，請點擊下方按鈕進行下載：")
-                            for idx, item in enumerate(selected_items, start=1):
-                                st.link_button(f"📥 下載 #{idx}: {item['title']}", item['url'])
+                            st.session_state['items_to_download'] = selected_items
                         else:
                             st.warning("⚠️ 請至少勾選一個項目！")
                 else:
                     st.warning("⚠️ 此連結似乎不是播放清單，請切換至「單一影片/音訊」模式再試一次。")
         except Exception as e:
             st.error(f"❌ 播放清單解析失敗：{e}")
+
+    # 處理勾選項目的實體檔案下載
+    if 'items_to_download' in st.session_state:
+        selected_items = st.session_state['items_to_download']
+        st.success(f"🎉 已選擇 {len(selected_items)} 個項目！請點擊下方按鈕進行下載：")
+        
+        for idx, item in enumerate(selected_items, start=1):
+            st.write(f"**#{idx} {item['title']}**")
+            
+            # 使用 Cobalt 代理取得真正可下載的串流檔案連結
+            try:
+                res = requests.post(
+                    "https://api.cobalt.tools/",
+                    json={"url": item['url'], "downloadMode": "audio" if "音訊" in mode else "auto"},
+                    headers={"Accept": "application/json", "Content-Type": "application/json"},
+                    timeout=10
+                )
+                data = res.json()
+                dl_url = data.get("url")
+                if dl_url:
+                    st.link_button(f"💾 下載檔案 (#{idx})", dl_url)
+                else:
+                    st.error(f"❌ 無法取得 #{idx} 的下載連結")
+            except Exception:
+                st.error(f"❌ 處理 #{idx} 時連線超時")
+            st.write("---")
 
 # --- 模式 B：單一媒體模式 (無播放清單) ---
 else:
@@ -104,7 +127,6 @@ else:
             st.info("⌛ 正在解析並抓取媒體檔案，請稍候...")
             target_url = url.strip()
             
-            # 優先嘗試 Cobalt 代理通道
             try:
                 res = requests.post(
                     "https://api.cobalt.tools/",
@@ -121,9 +143,8 @@ else:
                     for idx, item in enumerate(data.get("picker", []), start=1):
                         st.link_button(f"💾 下載項目 {idx}", item.get("url"))
                 else:
-                    raise Exception("Cobalt 解析無效，切換至本地下載引擎")
+                    raise Exception("Cobalt 解析無效")
             except Exception:
-                # 備援 yt-dlp 本地轉存通道
                 try:
                     with tempfile.TemporaryDirectory() as temp_dir:
                         save_path = os.path.join(temp_dir, "%(title)s.%(ext)s")
