@@ -31,27 +31,20 @@ url = st.text_input(
 
 # ==================== 精確提取 Video ID ====================
 def clean_video_id(url_str):
-    """乾淨提取 11 位數的 YouTube Video ID，自動去除 ?si= 等參數"""
+    """乾淨提取 11 位數的 YouTube Video ID"""
     url_str = url_str.strip()
-    
-    # 處理 short link: https://youtu.be/Ntr0ZnRr7Qo?si=...
     if "youtu.be/" in url_str:
         path = url_str.split("youtu.be/")[1]
         video_id = path.split("?")[0].split("&")[0]
         return video_id[:11]
-    
-    # 處理 standard link: https://www.youtube.com/watch?v=Ntr0ZnRr7Qo
     if "watch" in url_str:
         parsed_url = urlparse(url_str)
         captured = parse_qs(parsed_url.query).get('v')
         if captured:
             return captured[0][:11]
-
-    # 通用正則比對
     match = re.search(r'([a-zA-Z0-9_-]{11})', url_str)
     if match:
         return match.group(1)
-        
     return None
 
 # ==================== 下載解析邏輯 ====================
@@ -64,33 +57,19 @@ if st.button("🚀 開始下載", type="primary", use_container_width=True):
 
         if video_id and len(video_id) == 11:
             st.success(f"✅ 解析成功！(影片 ID: {video_id})")
-            st.write("請選擇下方任一通道進行下載：")
-
-            # 通道 1：Invidious 官方免封鎖直連通道
-            audio_flag = "&listen=1" if is_audio else ""
-            invidious_url = f"https://yewtu.be/watch?v={video_id}{audio_flag}"
-
-            # 通道 2：Cobalt 網頁直連入口
-            cobalt_url = f"https://cobalt.tools"
+            
+            # 使用高相容性的解析入口點
+            format_type = "mp3" if is_audio else "1080"
+            download_portal = f"https://loader.to/api/card/?url=https://www.youtube.com/watch?v={video_id}&f={format_type}"
 
             st.markdown(
                 f'''
-                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
-                    <a href="{invidious_url}" target="_blank" rel="noopener noreferrer" style="text-decoration: none;">
-                        <div style="background-color: #28a745; color: white; padding: 12px; text-align: center; border-radius: 8px; font-weight: bold;">
-                            ▶ 通道一：開啟線上無廣告播放 / 直接儲存
-                        </div>
-                    </a>
-                    <a href="{cobalt_url}" target="_blank" rel="noopener noreferrer" style="text-decoration: none;">
-                        <div style="background-color: #007bff; color: white; padding: 12px; text-align: center; border-radius: 8px; font-weight: bold;">
-                            🌐 通道二：前往 Cobalt 工具頁面下載
-                        </div>
-                    </a>
+                <div style="margin-top: 15px;">
+                    <iframe src="{download_portal}" width="100%" height="250px" scrolling="no" style="border:none; border-radius:10px; background:#ffffff; box-shadow: 0 4px 10px rgba(0,0,0,0.05);"></iframe>
                 </div>
                 ''',
                 unsafe_allow_html=True
             )
-            
-            st.info("💡 **下載小撇步**：點擊「通道一」開啟頁面後，點擊影片右下角的三個點 `⋮` 即可選擇【下載】！")
+            st.info("💡 **操作說明**：請在上方框內點擊【Download】，進度條跑完後即可直接儲存檔案至手機！")
         else:
             st.error("❌ 無法識別該 YouTube 網址，請確認連結格式是否正確！")
