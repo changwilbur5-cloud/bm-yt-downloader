@@ -1,5 +1,5 @@
 import streamlit as st
-import requests
+import re
 
 # ==================== 頁面設定 ====================
 st.set_page_config(
@@ -29,61 +29,40 @@ url = st.text_input(
 )
 
 # ==================== 下載解析邏輯 ====================
+def extract_video_id(url_str):
+    """提取 YouTube Video ID"""
+    pattern = r'(?:v=|\/([0-9A-Za-z_-]{11})|youtu\.be\/)([0-9A-Za-z_-]{11})'
+    match = re.search(pattern, url_str)
+    if match:
+        return match.group(1) or match.group(2)
+    return None
+
 if st.button("🚀 開始下載", type="primary", use_container_width=True):
     if not url.strip():
         st.warning("⚠️ 請先貼上有效的網址！")
     else:
-        status_box = st.info("⌛ 正在建立專屬下載通道，請稍候...")
+        video_id = extract_video_id(url.strip())
         is_audio = "MP3" in format_choice
 
-        # 使用最新的 Cobalt 代理服務 API 端點
-        api_url = "https://co.wuk.sh/api/json"
-        headers = {
-            "Accept": "application/json",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "url": url.strip(),
-            "isAudioOnly": is_audio,
-            "aFormat": "mp3" if is_audio else "best",
-            "vCodec": "h264"
-        }
-
-        try:
-            res = requests.post(api_url, json=payload, headers=headers, timeout=15)
-            data = res.json()
-            status_box.empty()
-
-            if res.status_code == 200 and "url" in data:
-                download_link = data["url"]
-                st.success("✅ 解析成功！請點擊下方按鈕下載：")
-                
-                st.markdown(
-                    f'''
-                    <a href="{download_link}" target="_blank" rel="noopener noreferrer" style="text-decoration: none;">
-                        <div style="
-                            background-color: #28a745;
-                            color: white;
-                            padding: 14px 20px;
-                            text-align: center;
-                            border-radius: 8px;
-                            font-size: 18px;
-                            font-weight: bold;
-                            margin-top: 10px;
-                        ">
-                            💾 點我開始下載 ({'MP3 音訊' if is_audio else 'MP4 影片'})
-                        </div>
-                    </a>
-                    ''',
-                    unsafe_allow_html=True
-                )
+        if video_id:
+            st.success("✅ 解析成功！請使用下方快速下載通道：")
+            
+            # 使用免 API Key 的開放前端下載服務通道
+            if is_audio:
+                dl_link = f"https://api.vevioz.com/api/button/mp3/{video_id}"
             else:
-                # 備用方案：如果主 API 繁忙，自動切換至備用通道
-                st.warning("⚠️ 主要通道繁忙，切換至備用解析通道...")
-                alt_api_url = f"https://api.vevioz.com/api/button/mp3/{url.strip().split('/')[-1]}" if is_audio else f"https://api.vevioz.com/api/button/videos/{url.strip().split('/')[-1]}"
-                st.markdown(f"🔗 [點此使用備用下載通道]({alt_api_url})")
+                dl_link = f"https://api.vevioz.com/api/button/videos/{video_id}"
 
-        except Exception as e:
-            status_box.empty()
-            st.error("❌ 連線逾時，請再試一次或更換影片連結！")
+            # 嵌入安全且快速的下載按鈕頁面
+            st.markdown(
+                f'''
+                <div style="text-align: center; margin-top: 15px;">
+                    <iframe src="{dl_link}" width="100%" height="180px" scrolling="no" style="border:none; border-radius:10px; background:#f8f9fa;"></iframe>
+                </div>
+                ''',
+                unsafe_allow_html=True
+            )
+            
+            st.info("💡 提示：點擊上方框內的【Download】即可直接存檔至手機！")
+        else:
+            st.error("❌ 無法識別該 YouTube 網址，請確認輸入是否正確！")
