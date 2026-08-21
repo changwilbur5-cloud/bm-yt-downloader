@@ -1,5 +1,6 @@
 import streamlit as st
 import re
+from urllib.parse import urlparse, parse_qs
 
 # ==================== 頁面設定 ====================
 st.set_page_config(
@@ -28,41 +29,68 @@ url = st.text_input(
     placeholder="https://youtu.be/..."
 )
 
-# ==================== 下載解析邏輯 ====================
-def extract_video_id(url_str):
-    """提取 YouTube Video ID"""
-    pattern = r'(?:v=|\/([0-9A-Za-z_-]{11})|youtu\.be\/)([0-9A-Za-z_-]{11})'
-    match = re.search(pattern, url_str)
+# ==================== 精確提取 Video ID ====================
+def clean_video_id(url_str):
+    """乾淨提取 11 位數的 YouTube Video ID，自動去除 ?si= 等參數"""
+    url_str = url_str.strip()
+    
+    # 處理 short link: https://youtu.be/Ntr0ZnRr7Qo?si=...
+    if "youtu.be/" in url_str:
+        path = url_str.split("youtu.be/")[1]
+        video_id = path.split("?")[0].split("&")[0]
+        return video_id[:11]
+    
+    # 處理 standard link: https://www.youtube.com/watch?v=Ntr0ZnRr7Qo
+    if "watch" in url_str:
+        parsed_url = urlparse(url_str)
+        captured = parse_qs(parsed_url.query).get('v')
+        if captured:
+            return captured[0][:11]
+
+    # 通用正則比對
+    match = re.search(r'([a-zA-Z0-9_-]{11})', url_str)
     if match:
-        return match.group(1) or match.group(2)
+        return match.group(1)
+        
     return None
 
+# ==================== 下載解析邏輯 ====================
 if st.button("🚀 開始下載", type="primary", use_container_width=True):
     if not url.strip():
         st.warning("⚠️ 請先貼上有效的網址！")
     else:
-        video_id = extract_video_id(url.strip())
+        video_id = clean_video_id(url)
         is_audio = "MP3" in format_choice
 
-        if video_id:
-            st.success("✅ 解析成功！請使用下方快速下載通道：")
-            
-            # 使用免 API Key 的開放前端下載服務通道
-            if is_audio:
-                dl_link = f"https://api.vevioz.com/api/button/mp3/{video_id}"
-            else:
-                dl_link = f"https://api.vevioz.com/api/button/videos/{video_id}"
+        if video_id and len(video_id) == 11:
+            st.success(f"✅ 解析成功！(影片 ID: {video_id})")
+            st.write("請選擇下方任一通道進行下載：")
 
-            # 嵌入安全且快速的下載按鈕頁面
+            # 通道 1：Invidious 官方免封鎖直連通道
+            audio_flag = "&listen=1" if is_audio else ""
+            invidious_url = f"https://yewtu.be/watch?v={video_id}{audio_flag}"
+
+            # 通道 2：Cobalt 網頁直連入口
+            cobalt_url = f"https://cobalt.tools"
+
             st.markdown(
                 f'''
-                <div style="text-align: center; margin-top: 15px;">
-                    <iframe src="{dl_link}" width="100%" height="180px" scrolling="no" style="border:none; border-radius:10px; background:#f8f9fa;"></iframe>
+                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
+                    <a href="{invidious_url}" target="_blank" rel="noopener noreferrer" style="text-decoration: none;">
+                        <div style="background-color: #28a745; color: white; padding: 12px; text-align: center; border-radius: 8px; font-weight: bold;">
+                            ▶ 通道一：開啟線上無廣告播放 / 直接儲存
+                        </div>
+                    </a>
+                    <a href="{cobalt_url}" target="_blank" rel="noopener noreferrer" style="text-decoration: none;">
+                        <div style="background-color: #007bff; color: white; padding: 12px; text-align: center; border-radius: 8px; font-weight: bold;">
+                            🌐 通道二：前往 Cobalt 工具頁面下載
+                        </div>
+                    </a>
                 </div>
                 ''',
                 unsafe_allow_html=True
             )
             
-            st.info("💡 提示：點擊上方框內的【Download】即可直接存檔至手機！")
+            st.info("💡 **下載小撇步**：點擊「通道一」開啟頁面後，點擊影片右下角的三個點 `⋮` 即可選擇【下載】！")
         else:
-            st.error("❌ 無法識別該 YouTube 網址，請確認輸入是否正確！")
+            st.error("❌ 無法識別該 YouTube 網址，請確認連結格式是否正確！")
