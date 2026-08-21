@@ -1,7 +1,5 @@
-import os
-import glob
 import streamlit as st
-import yt_dlp
+import requests
 
 # ==================== 頁面設定 ====================
 st.set_page_config(
@@ -10,24 +8,10 @@ st.set_page_config(
     layout="centered"
 )
 
-# ==================== 下載暫存資料夾 ====================
-DOWNLOAD_DIR = "downloads"
-if not os.path.exists(DOWNLOAD_DIR):
-    os.makedirs(DOWNLOAD_DIR)
-
-def cleanup_old_files():
-    """清理暫存區的舊檔案，避免佔用伺服器空間"""
-    for f in glob.glob(f"{DOWNLOAD_DIR}/*"):
-        try:
-            os.remove(f)
-        except Exception:
-            pass
-
-# ==================== 主頁面標題 ====================
 st.title("🐾 波貓下載器 (直連下載版)")
 st.write("選擇對應平台與格式，貼上網址即可快速解析下載！")
 
-# ==================== 輸入介面 ====================
+# ==================== UI 輸入區 ====================
 platform = st.selectbox(
     "1. 選擇平台與模式：",
     ["YouTube (單一影片/音訊)"]
@@ -44,69 +28,62 @@ url = st.text_input(
     placeholder="https://youtu.be/..."
 )
 
-# ==================== 下載處理邏輯 ====================
+# ==================== 下載解析邏輯 ====================
 if st.button("🚀 開始下載", type="primary", use_container_width=True):
     if not url.strip():
-        st.warning("⚠️ 請先貼上有效的影片或音樂網址！")
+        st.warning("⚠️ 請先貼上有效的網址！")
     else:
-        cleanup_old_files()
-        status_box = st.info("⌛ 正在為您處理影片串流，請稍候...")
-        
+        status_box = st.info("⌛ 正在建立專屬下載通道，請稍候...")
         is_audio = "MP3" in format_choice
-        output_template = os.path.join(DOWNLOAD_DIR, "%(title)s.%(ext)s")
 
-        # 設定 yt-dlp 選項，選取兼具高畫質與最佳相容性的格式
-        if is_audio:
-            ydl_opts = {
-                "format": "bestaudio/best",
-                "outtmpl": output_template,
-                "postprocessors": [{
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": "192",
-                }],
-                "quiet": True,
-                "no_warnings": True,
-            }
-        else:
-            ydl_opts = {
-                "format": "best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best",
-                "outtmpl": output_template,
-                "quiet": True,
-                "no_warnings": True,
-            }
+        # 使用最新的 Cobalt 代理服務 API 端點
+        api_url = "https://co.wuk.sh/api/json"
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "url": url.strip(),
+            "isAudioOnly": is_audio,
+            "aFormat": "mp3" if is_audio else "best",
+            "vCodec": "h264"
+        }
 
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url.strip(), download=True)
-                video_title = info.get("title", "downloaded_media")
+            res = requests.post(api_url, json=payload, headers=headers, timeout=15)
+            data = res.json()
+            status_box.empty()
 
-                # 尋找下載產生的檔案
-                downloaded_files = glob.glob(f"{DOWNLOAD_DIR}/*")
-
-                if downloaded_files:
-                    target_file = downloaded_files[0]
-                    file_name = os.path.basename(target_file)
-
-                    status_box.empty()
-                    st.success(f"✅ 解析成功！【{video_title}】")
-
-                    # 讀取檔案二進位資料並透過 Streamlit 原生按鈕發送給手機
-                    with open(target_file, "rb") as f:
-                        file_bytes = f.read()
-
-                    st.download_button(
-                        label=f"💾 點我儲存到手機 ({'MP3 音訊' if is_audio else 'MP4 影片'})",
-                        data=file_bytes,
-                        file_name=file_name,
-                        mime="audio/mp3" if is_audio else "video/mp4",
-                        type="primary",
-                        use_container_width=True
-                    )
-                else:
-                    status_box.empty()
-                    st.error("❌ 找不到處理後的檔案，請重試！")
+            if res.status_code == 200 and "url" in data:
+                download_link = data["url"]
+                st.success("✅ 解析成功！請點擊下方按鈕下載：")
+                
+                st.markdown(
+                    f'''
+                    <a href="{download_link}" target="_blank" rel="noopener noreferrer" style="text-decoration: none;">
+                        <div style="
+                            background-color: #28a745;
+                            color: white;
+                            padding: 14px 20px;
+                            text-align: center;
+                            border-radius: 8px;
+                            font-size: 18px;
+                            font-weight: bold;
+                            margin-top: 10px;
+                        ">
+                            💾 點我開始下載 ({'MP3 音訊' if is_audio else 'MP4 影片'})
+                        </div>
+                    </a>
+                    ''',
+                    unsafe_allow_html=True
+                )
+            else:
+                # 備用方案：如果主 API 繁忙，自動切換至備用通道
+                st.warning("⚠️ 主要通道繁忙，切換至備用解析通道...")
+                alt_api_url = f"https://api.vevioz.com/api/button/mp3/{url.strip().split('/')[-1]}" if is_audio else f"https://api.vevioz.com/api/button/videos/{url.strip().split('/')[-1]}"
+                st.markdown(f"🔗 [點此使用備用下載通道]({alt_api_url})")
 
         except Exception as e:
             status_box.empty()
-            st.error(f"❌ 解析失敗：{e}")
+            st.error("❌ 連線逾時，請再試一次或更換影片連結！")
