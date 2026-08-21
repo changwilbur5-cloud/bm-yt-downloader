@@ -58,18 +58,32 @@ if st.button("🚀 開始下載", type="primary", use_container_width=True):
         if video_id and len(video_id) == 11:
             st.success(f"✅ 解析成功！(影片 ID: {video_id})")
             
-            # 使用高相容性的解析入口點
-            format_type = "mp3" if is_audio else "1080"
-            download_portal = f"https://loader.to/api/card/?url=https://www.youtube.com/watch?v={video_id}&f={format_type}"
+            # 直連解析服務門戶 (免嵌入、防封鎖)
+            fmt = "mp3" if is_audio else "1080"
+            download_url = f"https://loader.to/zh22/?link=https://www.youtube.com/watch?v={video_id}&f={fmt}"
 
+            # 使用大型導向按鈕，避開 iframe 限制
             st.markdown(
                 f'''
-                <div style="margin-top: 15px;">
-                    <iframe src="{download_portal}" width="100%" height="250px" scrolling="no" style="border:none; border-radius:10px; background:#ffffff; box-shadow: 0 4px 10px rgba(0,0,0,0.05);"></iframe>
-                </div>
+                <a href="{download_url}" target="_blank" rel="noopener noreferrer" style="text-decoration: none;">
+                    <div style="
+                        background-color: #0891b2;
+                        color: white;
+                        padding: 16px;
+                        text-align: center;
+                        border-radius: 10px;
+                        font-size: 18px;
+                        font-weight: bold;
+                        margin-top: 15px;
+                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                    ">
+                        📥 點我開啟快捷下載頁面 ({'MP3 音樂' if is_audio else 'MP4 影片'})
+                    </div>
+                </a>
                 ''',
                 unsafe_allow_html=True
             )
-            st.info("💡 **操作說明**：請在上方框內點擊【Download】，進度條跑完後即可直接儲存檔案至手機！")
+            
+            st.info("💡 **下載說明**：點擊上方藍色按鈕會新開頁面，系統已為您帶入此影片，直接按【Download】即可存檔至手機！")
         else:
             st.error("❌ 無法識別該 YouTube 網址，請確認連結格式是否正確！")
